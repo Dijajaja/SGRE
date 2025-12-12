@@ -106,6 +106,16 @@ Toutes les tables utilisent des séquences Oracle avec des triggers pour l'auto-
 - Oracle Database (11g ou supérieur)
 - Node.js (v14 ou supérieur)
 - npm ou yarn
+- Git
+
+### 0. Cloner le Projet
+
+Pour cloner le projet sur votre machine locale :
+
+```bash
+git clone https://github.com/Dijajaja/SGRE.git
+cd SGRE
+```
 
 ### 1. Configuration Oracle
 
@@ -135,16 +145,27 @@ Toutes les tables utilisent des séquences Oracle avec des triggers pour l'auto-
    npm install
    ```
 
-3. Créez un fichier `.env` :
+3. Créez un fichier `.env` en copiant le modèle (si disponible) ou créez-le manuellement :
+   ```bash
+   # Sur Windows (PowerShell)
+   Copy-Item .env.example .env
+   
+   # Sur Linux/Mac
+   cp .env.example .env
+   ```
+   
+   Puis modifiez le fichier `.env` avec vos identifiants Oracle :
    ```env
    ORACLE_HOST=localhost
    ORACLE_PORT=1521
-   ORACLE_SERVICE=XE
-   ORACLE_USER=votre_username
-   ORACLE_PASSWORD=votre_password
+   ORACLE_SERVICE=XEPDB1
+   ORACLE_USER=SGRE_USER
+   ORACLE_PASSWORD=votre_mot_de_passe
    PORT=3001
    NODE_ENV=development
    ```
+   
+   **Note** : Contactez l'administrateur du projet pour obtenir les identifiants Oracle.
 
 4. Démarrez le serveur :
    ```bash
@@ -239,9 +260,44 @@ Pour tester le système :
 - **React** : Interface moderne avec gestion d'état locale
 - **API REST** : Communication asynchrone entre frontend et backend
 
+## 🔗 Lien du Dépôt
+
+**GitHub** : https://github.com/Dijajaja/SGRE.git
+
+## 📋 Instructions pour l'Équipe
+
+### Cloner le Projet
+
+```bash
+git clone https://github.com/Dijajaja/SGRE.git
+cd SGRE
+```
+
+### Configuration Rapide
+
+1. **Oracle** : Exécutez les scripts dans `oracle/` dans l'ordre (01 à 05)
+2. **Backend** : 
+   ```bash
+   cd backend
+   npm install
+   # Créez votre fichier .env avec les identifiants Oracle
+   npm start
+   ```
+3. **Frontend** :
+   ```bash
+   cd frontend
+   npm install
+   npm start
+   ```
+
+### Identifiants de Test
+
+- **Admin par défaut** : `admin@iscae.edu` (mot de passe : voir base de données)
+- **Format email étudiant** : `i12345.etu@iscae.mr` (où `i12345` est le matricule)
+
 ## 👥 Auteurs
 
-Projet réalisé dans le cadre du module **Base de Données Avancées Oracle**.
+Projet réalisé dans le cadre du module **Base de Données Avancées Oracle** - **ISCAE**.
 
 ## 📄 Licence
 
