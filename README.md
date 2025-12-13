@@ -264,15 +264,6 @@ Pour tester le système :
 
 **GitHub** : https://github.com/Dijajaja/SGRE.git
 
-## 📋 Instructions pour l'Équipe
-
-### Cloner le Projet
-
-```bash
-git clone https://github.com/Dijajaja/SGRE.git
-cd SGRE
-```
-
 ### Configuration Rapide
 
 1. **Oracle** : Exécutez les scripts dans `oracle/` dans l'ordre (01 à 05)
