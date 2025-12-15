@@ -43,7 +43,13 @@ const Toast = ({ message, type, onClose }) => {
 
 function AdminDashboard({ user, onLogout }) {
   const [reclamations, setReclamations] = useState([]);
-  const [statistiques, setStatistiques] = useState(null);
+  const [statistiques, setStatistiques] = useState({
+    total_reclamations: 0,
+    en_attente: 0,
+    en_cours: 0,
+    resolues: 0,
+    temps_moyen_jours: 0
+  });
   const [urgentes, setUrgentes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
@@ -94,23 +100,68 @@ function AdminDashboard({ user, onLogout }) {
 
       console.log('📡 URL de la requête:', `${API_URL}/reclamations?${params.toString()}`);
 
-      const [reclamationsRes, statsRes, urgentesRes] = await Promise.all([
+      const [reclamationsRes, statsRes, urgentesRes] = await Promise.allSettled([
         axios.get(`${API_URL}/reclamations?${params.toString()}`),
         axios.get(`${API_URL}/statistiques/globales`),
         axios.get(`${API_URL}/statistiques/urgentes`)
       ]);
       
-      console.log('📥 Données reçues du backend:', reclamationsRes.data);
-      console.log('📊 Nombre de réclamations:', reclamationsRes.data.length);
-      reclamationsRes.data.forEach(rec => {
-        const recId = rec.reclamation_id || rec.RECLAMATION_ID || rec.id || rec.ID;
-        const adminId = rec.admin_assignee_id || rec.ADMIN_ASSIGNEE_ID;
-        console.log(`  - Réclamation #${recId}: admin_assignee="${rec.admin_assignee || 'NULL'}", admin_assignee_id=${adminId || 'NULL'}, statut=${rec.statut || rec.STATUT}`);
-      });
+      // Traiter les réclamations
+      if (reclamationsRes.status === 'fulfilled') {
+        const data = reclamationsRes.value.data;
+        console.log('📥 Données reçues du backend:', data);
+        console.log('📊 Nombre de réclamations:', data.length);
+        data.forEach(rec => {
+          const recId = rec.reclamation_id || rec.RECLAMATION_ID || rec.id || rec.ID;
+          const adminId = rec.admin_assignee_id || rec.ADMIN_ASSIGNEE_ID;
+          console.log(`  - Réclamation #${recId}: admin_assignee="${rec.admin_assignee || 'NULL'}", admin_assignee_id=${adminId || 'NULL'}, statut=${rec.statut || rec.STATUT}`);
+        });
+        setReclamations(data);
+      } else {
+        console.error('❌ Erreur lors du chargement des réclamations:', reclamationsRes.reason);
+        setReclamations([]);
+      }
       
-      setReclamations(reclamationsRes.data);
-      setStatistiques(statsRes.data);
-      setUrgentes(urgentesRes.data);
+      // Traiter les statistiques
+      if (statsRes.status === 'fulfilled') {
+        const response = statsRes.value;
+        console.log('📈 Réponse complète des statistiques:', response);
+        console.log('📈 Status HTTP:', response.status);
+        console.log('📈 Données brutes:', response.data);
+        
+        if (response.data) {
+          const statsData = response.data;
+          console.log('📈 Statistiques reçues:', statsData);
+          
+          const newStats = {
+            total_reclamations: Number(statsData.total_reclamations) || 0,
+            en_attente: Number(statsData.en_attente) || 0,
+            en_cours: Number(statsData.en_cours) || 0,
+            resolues: Number(statsData.resolues) || 0,
+            temps_moyen_jours: Number(statsData.temps_moyen_jours) || 0
+          };
+          
+          console.log('📈 Statistiques formatées pour le state:', newStats);
+          setStatistiques(newStats);
+        } else {
+          console.warn('⚠️ Pas de données dans la réponse des statistiques');
+        }
+      } else {
+        console.error('❌ Erreur lors du chargement des statistiques:', statsRes.reason);
+        console.error('❌ Détails de l\'erreur:', statsRes.reason?.response?.data);
+        console.error('❌ Status HTTP:', statsRes.reason?.response?.status);
+        // Garder les valeurs par défaut déjà initialisées
+      }
+      
+      // Traiter les réclamations urgentes
+      if (urgentesRes.status === 'fulfilled') {
+        console.log('🚨 Réclamations urgentes:', urgentesRes.value.data);
+        setUrgentes(urgentesRes.value.data || []);
+      } else {
+        console.error('❌ Erreur lors du chargement des réclamations urgentes:', urgentesRes.reason);
+        setUrgentes([]);
+      }
+      
     } catch (error) {
       console.error('Erreur lors du chargement:', error);
       showToast('Erreur lors du chargement des données', 'error');
@@ -200,6 +251,19 @@ function AdminDashboard({ user, onLogout }) {
       return;
     }
     
+    // Trouver la réclamation actuelle pour vérifier si c'est un changement
+    const currentReclamation = reclamations.find(rec => {
+      const recId = rec.reclamation_id || rec.RECLAMATION_ID || rec.id || rec.ID;
+      return recId === parseInt(reclamationId);
+    });
+    
+    const currentAssigneeId = currentReclamation?.admin_assignee_id ? parseInt(currentReclamation.admin_assignee_id) : null;
+    
+    // Si c'est le même responsable, ne rien faire
+    if (currentAssigneeId === parseInt(adminId)) {
+      return;
+    }
+    
     const admin = admins.find(a => (a.id || a.ID) === parseInt(adminId));
     const adminName = admin ? `${admin.nom || admin.NOM} ${admin.prenom || admin.PRENOM}` : 'Responsable';
     
@@ -225,7 +289,6 @@ function AdminDashboard({ user, onLogout }) {
       });
       
       console.log('✅ Réponse attribution:', response.data);
-      console.log('🔄 Rechargement des données...');
       
       // Attendre un peu pour laisser Oracle se mettre à jour
       await new Promise(resolve => setTimeout(resolve, 300));
@@ -233,15 +296,8 @@ function AdminDashboard({ user, onLogout }) {
       // Recharger les données pour s'assurer de la cohérence
       await loadData();
       
-      // Vérifier que la mise à jour a bien été appliquée
-      const updatedRec = reclamations.find(rec => {
-        const recId = rec.reclamation_id || rec.RECLAMATION_ID || rec.id || rec.ID;
-        return recId === parseInt(reclamationId);
-      });
-      
-      console.log('🔍 Réclamation après rechargement:', updatedRec);
-      
-      showToast(`Responsable attribué avec succès: ${adminName}`, 'success');
+      const actionText = currentAssigneeId ? 'changé' : 'attribué';
+      showToast(`Responsable ${actionText} avec succès: ${adminName}`, 'success');
     } catch (error) {
       console.error('❌ Erreur lors de l\'attribution:', error);
       console.error('❌ Détails:', error.response?.data);
@@ -352,45 +408,46 @@ function AdminDashboard({ user, onLogout }) {
       </div>
 
       <div className="container dashboard admin-dashboard">
-        {statistiques && (
-          <div className="stats-grid">
+        {/* Debug: Afficher les statistiques dans la console */}
+        {console.log('🔍 Statistiques dans le render:', statistiques)}
+        
+        <div className="stats-grid">
             <div className="stat-card">
               <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <StatsIcon size={16} color="white" />
                 Total Réclamations
               </h3>
-              <div className="value">{statistiques.total_reclamations}</div>
+              <div className="value">{statistiques?.total_reclamations ?? 0}</div>
             </div>
             <div className="stat-card" style={{ background: 'rgba(244, 114, 182, 0.3)', border: '1px solid rgba(255, 255, 255, 0.4)' }}>
               <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <AlertIcon size={16} color="white" />
                 En Attente
               </h3>
-              <div className="value">{statistiques.en_attente}</div>
+              <div className="value">{statistiques?.en_attente ?? 0}</div>
             </div>
             <div className="stat-card" style={{ background: 'rgba(96, 165, 250, 0.3)', border: '1px solid rgba(255, 255, 255, 0.4)' }}>
               <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <SettingsIcon size={16} color="white" />
                 En Cours
               </h3>
-              <div className="value">{statistiques.en_cours}</div>
+              <div className="value">{statistiques?.en_cours ?? 0}</div>
             </div>
             <div className="stat-card" style={{ background: 'rgba(52, 211, 153, 0.3)', border: '1px solid rgba(255, 255, 255, 0.4)' }}>
               <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <CheckIcon size={16} color="white" />
                 Résolues
               </h3>
-              <div className="value">{statistiques.resolues}</div>
+              <div className="value">{statistiques?.resolues ?? 0}</div>
             </div>
             <div className="stat-card" style={{ background: 'rgba(251, 191, 36, 0.3)', border: '1px solid rgba(255, 255, 255, 0.4)' }}>
               <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <CalendarIcon size={16} color="white" />
                 Temps Moyen
               </h3>
-              <div className="value">{statistiques.temps_moyen_jours?.toFixed(1) || 0} jours</div>
+              <div className="value">{(statistiques?.temps_moyen_jours ?? 0).toFixed(1)} jours</div>
             </div>
           </div>
-        )}
 
         {urgentes.length > 0 && (
           <div className="card" style={{ 
@@ -567,9 +624,40 @@ function AdminDashboard({ user, onLogout }) {
                     </td>
                     <td>
                       {(() => {
-                        const hasAssignee = reclamation.admin_assignee || reclamation.admin_assignee_id;
-                        if (!hasAssignee) return null;
+                        const isClosedOrResolved = reclamation.statut === 'FERMEE' || reclamation.statut === 'RESOLUE';
                         
+                        // Si fermée ou résolue, afficher seulement le nom du responsable (lecture seule)
+                        if (isClosedOrResolved) {
+                          let displayName = reclamation.admin_assignee;
+                          
+                          if (!displayName && reclamation.admin_assignee_id) {
+                            const assignedAdmin = admins.find(a => {
+                              const adminId = a.id || a.ID;
+                              const assigneeId = parseInt(reclamation.admin_assignee_id);
+                              return adminId === assigneeId;
+                            });
+                            
+                            if (assignedAdmin) {
+                              displayName = `${assignedAdmin.nom || assignedAdmin.NOM} ${assignedAdmin.prenom || assignedAdmin.PRENOM}`;
+                            } else {
+                              displayName = `Admin #${reclamation.admin_assignee_id}`;
+                            }
+                          }
+                          
+                          return displayName ? (
+                            <span style={{ color: 'rgba(255, 255, 255, 0.9)', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <UserIcon size={16} color="rgba(255, 255, 255, 0.9)" />
+                              {displayName}
+                            </span>
+                          ) : (
+                            <span style={{ color: 'rgba(255, 255, 255, 0.5)', fontStyle: 'italic', fontSize: '13px' }}>
+                              Non assigné
+                            </span>
+                          );
+                        }
+                        
+                        // Pour les réclamations actives, afficher un dropdown pour attribuer/changer le responsable
+                        const currentAssigneeId = reclamation.admin_assignee_id ? parseInt(reclamation.admin_assignee_id) : null;
                         let displayName = reclamation.admin_assignee;
                         
                         // Si pas de nom mais un ID, chercher dans la liste des admins
@@ -582,55 +670,75 @@ function AdminDashboard({ user, onLogout }) {
                           
                           if (assignedAdmin) {
                             displayName = `${assignedAdmin.nom || assignedAdmin.NOM} ${assignedAdmin.prenom || assignedAdmin.PRENOM}`;
-                          } else {
-                            console.warn(`⚠️ Admin non trouvé pour ID ${reclamation.admin_assignee_id} dans la réclamation #${reclamation.reclamation_id}`);
-                            displayName = `Admin #${reclamation.admin_assignee_id}`;
                           }
                         }
                         
-                        return displayName ? (
-                          <span style={{ color: 'rgba(255, 255, 255, 0.9)', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <UserIcon size={16} color="rgba(255, 255, 255, 0.9)" />
-                            {displayName}
-                          </span>
-                        ) : null;
-                      })() || (
-                        <select 
-                          onChange={(e) => {
-                            const reclamationId = reclamation.reclamation_id || reclamation.RECLAMATION_ID || reclamation.id || reclamation.ID;
-                            if (e.target.value && reclamationId) {
-                              handleAssignResponsible(reclamationId, e.target.value);
-                            }
-                          }}
-                          defaultValue=""
-                          disabled={reclamation.statut === 'FERMEE'}
-                          style={{ 
-                            padding: '6px 12px',
-                            borderRadius: '6px',
-                            border: '2px solid #e2e8f0',
-                            fontSize: '13px',
-                            cursor: reclamation.statut === 'FERMEE' ? 'not-allowed' : 'pointer',
-                            opacity: reclamation.statut === 'FERMEE' ? 0.5 : 1
-                          }}
-                        >
-                          <option value="">Assigner un responsable...</option>
-                          {admins.map(admin => (
-                            <option key={admin.id || admin.ID} value={admin.id || admin.ID}>
-                              {admin.nom || admin.NOM} {admin.prenom || admin.PRENOM}
-                            </option>
-                          ))}
-                        </select>
-                      )}
+                        return (
+                          <select 
+                            onChange={(e) => {
+                              const reclamationId = reclamation.reclamation_id || reclamation.RECLAMATION_ID || reclamation.id || reclamation.ID;
+                              if (e.target.value && reclamationId) {
+                                handleAssignResponsible(reclamationId, e.target.value);
+                              }
+                            }}
+                            value={currentAssigneeId || ""}
+                            style={{ 
+                              padding: '6px 12px',
+                              borderRadius: '6px',
+                              border: '2px solid #e2e8f0',
+                              fontSize: '13px',
+                              cursor: 'pointer',
+                              backgroundColor: 'white',
+                              color: '#1e293b',
+                              minWidth: '200px'
+                            }}
+                          >
+                            <option value="">{displayName ? "Changer le responsable..." : "Assigner un responsable..."}</option>
+                            {admins.map(admin => {
+                              const adminId = admin.id || admin.ID;
+                              const isSelected = adminId === currentAssigneeId;
+                              return (
+                                <option key={adminId} value={adminId}>
+                                  {admin.nom || admin.NOM} {admin.prenom || admin.PRENOM}
+                                  {isSelected ? ' (actuel)' : ''}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        );
+                      })()}
                     </td>
                     <td>
-                      <button 
-                        className="btn btn-primary btn-sm"
-                        onClick={() => openModal(reclamation)}
-                        style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                      >
-                        <EditIcon size={16} color="white" />
-                        Modifier
-                      </button>
+                      {(() => {
+                        const isClosedOrResolved = reclamation.statut === 'FERMEE' || reclamation.statut === 'RESOLUE';
+                        
+                        if (isClosedOrResolved) {
+                          // Pour les réclamations fermées/résolues, afficher un bouton "Voir" en lecture seule
+                          return (
+                            <button 
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => openModal(reclamation)}
+                              style={{ display: 'flex', alignItems: 'center', gap: '6px', opacity: 0.8 }}
+                              title="Voir les détails (lecture seule)"
+                            >
+                              <DocumentIcon size={16} color="white" />
+                              Voir
+                            </button>
+                          );
+                        }
+                        
+                        // Pour les autres statuts, afficher le bouton "Modifier"
+                        return (
+                          <button 
+                            className="btn btn-primary btn-sm"
+                            onClick={() => openModal(reclamation)}
+                            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                          >
+                            <EditIcon size={16} color="white" />
+                            Modifier
+                          </button>
+                        );
+                      })()}
                     </td>
                   </tr>
                 ))}
@@ -640,91 +748,134 @@ function AdminDashboard({ user, onLogout }) {
         </div>
       </div>
 
-      {showModal && selectedReclamation && (
-        <div className="modal" onClick={() => setShowModal(false)}>
+      {showModal && selectedReclamation && (() => {
+        const isReadOnly = selectedReclamation.statut === 'FERMEE' || selectedReclamation.statut === 'RESOLUE';
+        const currentStatut = selectedReclamation.statut || selectedReclamation.STATUT;
+        
+        return (
+          <div className="modal" onClick={() => setShowModal(false)}>
             <div className="modal-content" onClick={(e) => e.stopPropagation()}>
               <div className="modal-header">
                 <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'white', textShadow: '0 2px 4px rgba(0, 0, 0, 0.2)' }}>
-                  <EditIcon size={24} color="white" />
-                  Modifier la réclamation #{selectedReclamation.reclamation_id}
+                  {isReadOnly ? <DocumentIcon size={24} color="white" /> : <EditIcon size={24} color="white" />}
+                  {isReadOnly ? 'Détails de la réclamation' : 'Modifier la réclamation'} #{selectedReclamation.reclamation_id}
                 </h3>
                 <button className="close-btn" onClick={() => setShowModal(false)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <CloseIcon size={24} color="#999" />
                 </button>
               </div>
-              <div className="form-group">
-                <label>
-                  <TagIcon size={18} color="white" />
-                  Nouveau statut
-                  {selectedReclamation && (
-                    <span style={{ fontSize: '12px', opacity: 0.8, marginLeft: '8px' }}>
-                      (Actuel: {selectedReclamation.statut || selectedReclamation.STATUT})
-                    </span>
-                  )}
+              
+              {/* Informations de la réclamation */}
+              <div className="form-group" style={{ marginBottom: '16px' }}>
+                <label style={{ marginBottom: '8px', display: 'block', color: 'rgba(255, 255, 255, 0.9)' }}>
+                  <strong>Titre:</strong> {selectedReclamation.titre}
                 </label>
-                <select
-                  value={actionData.nouveau_statut}
-                  onChange={(e) => setActionData({ ...actionData, nouveau_statut: e.target.value })}
-                >
-                  {selectedReclamation && (() => {
-                    const currentStatut = selectedReclamation.statut || selectedReclamation.STATUT;
-                    const validTransitions = {
-                      'EN ATTENTE': ['EN COURS', 'RESOLUE', 'FERMEE'],
-                      'EN COURS': ['RESOLUE', 'FERMEE', 'EN ATTENTE'],
-                      'RESOLUE': ['FERMEE'],
-                      'FERMEE': []
-                    };
-                    const allowed = validTransitions[currentStatut] || [];
-                    return (
-                      <>
-                        <option value="">-- Sélectionner un statut --</option>
-                        {allowed.map(statut => (
-                          <option key={statut} value={statut}>
-                            {statut === 'EN ATTENTE' ? 'En Attente' : 
-                             statut === 'EN COURS' ? 'En Cours' : 
-                             statut === 'RESOLUE' ? 'Résolue' : 'Fermée'}
-                          </option>
-                        ))}
-                        {allowed.length === 0 && (
-                          <option value="" disabled>Cette réclamation est fermée et ne peut plus être modifiée</option>
-                        )}
-                      </>
-                    );
-                  })()}
-                </select>
-              </div>
-              <div className="form-group">
-                <label>
-                  <DocumentIcon size={18} color="white" />
-                  Commentaire
+                <label style={{ marginBottom: '8px', display: 'block', color: 'rgba(255, 255, 255, 0.9)' }}>
+                  <strong>Type:</strong> {selectedReclamation.type_reclamation}
                 </label>
-                <textarea
-                  value={actionData.commentaire}
-                  onChange={(e) => setActionData({ ...actionData, commentaire: e.target.value })}
-                  placeholder="Ajouter un commentaire pour l'étudiant..."
-                  rows="4"
-                />
+                <label style={{ marginBottom: '8px', display: 'block', color: 'rgba(255, 255, 255, 0.9)' }}>
+                  <strong>Étudiant:</strong> {selectedReclamation.etudiant_nom}
+                </label>
+                <label style={{ marginBottom: '8px', display: 'block', color: 'rgba(255, 255, 255, 0.9)' }}>
+                  <strong>Statut actuel:</strong> 
+                  <span className={`badge ${getStatusBadge(currentStatut)}`} style={{ marginLeft: '8px' }}>
+                    {currentStatut}
+                  </span>
+                </label>
+                {selectedReclamation.admin_assignee && (
+                  <label style={{ marginBottom: '8px', display: 'block', color: 'rgba(255, 255, 255, 0.9)' }}>
+                    <strong>Responsable:</strong> {selectedReclamation.admin_assignee}
+                  </label>
+                )}
               </div>
-              <button 
-                className="btn btn-primary" 
-                onClick={handleStatusChange} 
-                disabled={isSubmitting || !actionData.nouveau_statut}
-                style={{ 
-                  width: '100%', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center', 
-                  gap: '8px',
-                  opacity: (isSubmitting || !actionData.nouveau_statut) ? 0.6 : 1,
-                  cursor: (isSubmitting || !actionData.nouveau_statut) ? 'not-allowed' : 'pointer'
-                }}
-              >
-                <SaveIcon size={18} color="white" />
-                {isSubmitting ? 'Enregistrement...' : 'Enregistrer les modifications'}
-              </button>
+              
+              {!isReadOnly && (
+                <>
+                  <div className="form-group">
+                    <label>
+                      <TagIcon size={18} color="white" />
+                      Nouveau statut
+                      <span style={{ fontSize: '12px', opacity: 0.8, marginLeft: '8px' }}>
+                        (Actuel: {currentStatut})
+                      </span>
+                    </label>
+                    <select
+                      value={actionData.nouveau_statut}
+                      onChange={(e) => setActionData({ ...actionData, nouveau_statut: e.target.value })}
+                    >
+                      {(() => {
+                        const validTransitions = {
+                          'EN ATTENTE': ['EN COURS', 'RESOLUE', 'FERMEE'],
+                          'EN COURS': ['RESOLUE', 'FERMEE', 'EN ATTENTE'],
+                          'RESOLUE': ['FERMEE'],
+                          'FERMEE': []
+                        };
+                        const allowed = validTransitions[currentStatut] || [];
+                        return (
+                          <>
+                            <option value="">-- Sélectionner un statut --</option>
+                            {allowed.map(statut => (
+                              <option key={statut} value={statut}>
+                                {statut === 'EN ATTENTE' ? 'En Attente' : 
+                                 statut === 'EN COURS' ? 'En Cours' : 
+                                 statut === 'RESOLUE' ? 'Résolue' : 'Fermée'}
+                              </option>
+                            ))}
+                          </>
+                        );
+                      })()}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>
+                      <DocumentIcon size={18} color="white" />
+                      Commentaire
+                    </label>
+                    <textarea
+                      value={actionData.commentaire}
+                      onChange={(e) => setActionData({ ...actionData, commentaire: e.target.value })}
+                      placeholder="Ajouter un commentaire pour l'étudiant..."
+                      rows="4"
+                    />
+                  </div>
+                  <button 
+                    className="btn btn-primary" 
+                    onClick={handleStatusChange} 
+                    disabled={isSubmitting || !actionData.nouveau_statut}
+                    style={{ 
+                      width: '100%', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      gap: '8px',
+                      opacity: (isSubmitting || !actionData.nouveau_statut) ? 0.6 : 1,
+                      cursor: (isSubmitting || !actionData.nouveau_statut) ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    <SaveIcon size={18} color="white" />
+                    {isSubmitting ? 'Enregistrement...' : 'Enregistrer les modifications'}
+                  </button>
+                </>
+              )}
+              
+              {isReadOnly && (
+                <div style={{ 
+                  padding: '16px', 
+                  background: 'rgba(255, 255, 255, 0.1)', 
+                  borderRadius: '8px', 
+                  marginTop: '16px',
+                  textAlign: 'center',
+                  color: 'rgba(255, 255, 255, 0.8)'
+                }}>
+                  <p style={{ margin: 0 }}>
+                    Cette réclamation est <strong>{currentStatut.toLowerCase()}</strong> et ne peut plus être modifiée.
+                  </p>
+                </div>
+              )}
             </div>
-        </div>
-      )}
+          </div>
+        );
+      })()}
     </div>
   );
 }

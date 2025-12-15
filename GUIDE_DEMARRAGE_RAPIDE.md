@@ -17,7 +17,7 @@
      Mot de passe : [votre mot de passe sys]
      Rôle : SYSDBA
      Hôte : localhost
-     Port : 1521
+     Port : 1521 
      SID/Service : XE (ou votre SID)
      ```
    - Cliquez sur "Tester" puis "Enregistrer"
