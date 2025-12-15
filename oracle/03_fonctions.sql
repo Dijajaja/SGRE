@@ -124,18 +124,25 @@ CREATE OR REPLACE FUNCTION temps_traitement_reclamation(
 RETURN NUMBER
 IS
     v_temps NUMBER;
+    v_date_creation DATE;
 BEGIN
+    -- Récupérer la date de création de la réclamation
+    SELECT date_creation INTO v_date_creation
+    FROM RECLAMATION
+    WHERE id = p_reclamation_id;
+    
+    -- Si pas de traitement, retourner 0
     SELECT 
-        MAX(t.date_traitement) - r.date_creation
+        MAX(t.date_traitement) - v_date_creation
     INTO v_temps
-    FROM RECLAMATION r
-    JOIN TRAITEMENT t ON r.id = t.reclamation_id
-    WHERE r.id = p_reclamation_id
-    GROUP BY r.date_creation;
+    FROM TRAITEMENT t
+    WHERE t.reclamation_id = p_reclamation_id;
     
     RETURN NVL(ROUND(v_temps, 2), 0);
 EXCEPTION
     WHEN NO_DATA_FOUND THEN
+        RETURN 0;
+    WHEN OTHERS THEN
         RETURN 0;
 END;
 /

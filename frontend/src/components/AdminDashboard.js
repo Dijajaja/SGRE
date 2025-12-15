@@ -5,6 +5,42 @@ import './Dashboard.css';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
 
+// Composant Toast pour les notifications
+const Toast = ({ message, type, onClose }) => {
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onClose();
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  const bgColors = {
+    success: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
+    error: 'linear-gradient(135deg, #eb3349 0%, #f45c43 100%)',
+    warning: 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)',
+    info: 'linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%)'
+  };
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: '20px',
+      right: '20px',
+      background: bgColors[type] || bgColors.info,
+      color: 'white',
+      padding: '16px 24px',
+      borderRadius: '12px',
+      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+      zIndex: 10000,
+      fontWeight: 600,
+      minWidth: '300px',
+      animation: 'slideInRight 0.3s ease'
+    }}>
+      {message}
+    </div>
+  );
+};
+
 function AdminDashboard({ user, onLogout }) {
   const [reclamations, setReclamations] = useState([]);
   const [statistiques, setStatistiques] = useState(null);
@@ -12,7 +48,8 @@ function AdminDashboard({ user, onLogout }) {
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
     statut: '',
-    type: ''
+    type: '',
+    mesReclamations: false // Nouveau filtre pour voir seulement mes réclamations
   });
   const [selectedReclamation, setSelectedReclamation] = useState(null);
   const [showModal, setShowModal] = useState(false);
@@ -21,6 +58,8 @@ function AdminDashboard({ user, onLogout }) {
     commentaire: ''
   });
   const [admins, setAdmins] = useState([]);
+  const [toast, setToast] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -28,23 +67,53 @@ function AdminDashboard({ user, onLogout }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, filters]);
 
+  // Charger les admins une seule fois au montage
+  useEffect(() => {
+    loadAdmins();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const showToast = (message, type = 'info') => {
+    setToast({ message, type });
+  };
+
   const loadData = async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
       if (filters.statut) params.append('statut', filters.statut);
       if (filters.type) params.append('type', filters.type);
+      // Ajouter le filtre admin_id si "Mes réclamations" est activé
+      const userId = user.id || user.ID;
+      if (filters.mesReclamations && userId) {
+        params.append('admin_id', userId);
+        console.log('🔍 Filtre "Mes réclamations" activé pour admin_id:', userId);
+      } else {
+        console.log('🔍 Affichage de toutes les réclamations (filtre désactivé)');
+      }
+
+      console.log('📡 URL de la requête:', `${API_URL}/reclamations?${params.toString()}`);
 
       const [reclamationsRes, statsRes, urgentesRes] = await Promise.all([
         axios.get(`${API_URL}/reclamations?${params.toString()}`),
         axios.get(`${API_URL}/statistiques/globales`),
         axios.get(`${API_URL}/statistiques/urgentes`)
       ]);
+      
+      console.log('📥 Données reçues du backend:', reclamationsRes.data);
+      console.log('📊 Nombre de réclamations:', reclamationsRes.data.length);
+      reclamationsRes.data.forEach(rec => {
+        const recId = rec.reclamation_id || rec.RECLAMATION_ID || rec.id || rec.ID;
+        const adminId = rec.admin_assignee_id || rec.ADMIN_ASSIGNEE_ID;
+        console.log(`  - Réclamation #${recId}: admin_assignee="${rec.admin_assignee || 'NULL'}", admin_assignee_id=${adminId || 'NULL'}, statut=${rec.statut || rec.STATUT}`);
+      });
+      
       setReclamations(reclamationsRes.data);
       setStatistiques(statsRes.data);
       setUrgentes(urgentesRes.data);
     } catch (error) {
       console.error('Erreur lors du chargement:', error);
+      showToast('Erreur lors du chargement des données', 'error');
     } finally {
       setLoading(false);
     }
@@ -59,144 +128,138 @@ function AdminDashboard({ user, onLogout }) {
     }
   };
 
+  // Validation des transitions de statut
+  const isValidStatusTransition = (ancienStatut, nouveauStatut) => {
+    const transitionsValides = {
+      'EN ATTENTE': ['EN COURS', 'RESOLUE', 'FERMEE'],
+      'EN COURS': ['RESOLUE', 'FERMEE', 'EN ATTENTE'],
+      'RESOLUE': ['FERMEE'],
+      'FERMEE': [] // Une réclamation fermée ne peut plus changer de statut
+    };
+    
+    return transitionsValides[ancienStatut]?.includes(nouveauStatut) ?? false;
+  };
+
   const handleStatusChange = async () => {
     if (!selectedReclamation) {
-      console.error('Aucune réclamation sélectionnée');
+      showToast('Aucune réclamation sélectionnée', 'error');
       return;
     }
     
     const reclamationId = selectedReclamation.reclamation_id || selectedReclamation.RECLAMATION_ID || selectedReclamation.id || selectedReclamation.ID;
     if (!reclamationId) {
-      console.error('ID de réclamation introuvable:', selectedReclamation);
-      const errorMsg = document.createElement('div');
-      errorMsg.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: linear-gradient(135deg, #f87171 0%, #ef4444 100%);
-        color: white;
-        padding: 16px 24px;
-        border-radius: 12px;
-        box-shadow: 0 4px 12px rgba(248, 113, 113, 0.3);
-        z-index: 10000;
-        font-weight: 600;
-      `;
-      errorMsg.textContent = 'Erreur: ID de réclamation introuvable';
-      document.body.appendChild(errorMsg);
-      setTimeout(() => {
-        document.body.removeChild(errorMsg);
-      }, 3000);
+      showToast('Erreur: ID de réclamation introuvable', 'error');
       return;
     }
-    
-    console.log('🔄 Mise à jour du statut pour la réclamation:', reclamationId);
-    console.log('📋 Données:', { admin_id: user.id || user.ID, nouveau_statut: actionData.nouveau_statut });
+
+    // Validation du nouveau statut
+    if (!actionData.nouveau_statut) {
+      showToast('Veuillez sélectionner un nouveau statut', 'warning');
+      return;
+    }
+
+    // Validation de la transition
+    const ancienStatut = selectedReclamation.statut;
+    if (!isValidStatusTransition(ancienStatut, actionData.nouveau_statut)) {
+      showToast(`Transition invalide: impossible de passer de "${ancienStatut}" à "${actionData.nouveau_statut}"`, 'error');
+      return;
+    }
+
+    // Confirmation pour certaines transitions importantes
+    if (actionData.nouveau_statut === 'FERMEE' && ancienStatut !== 'FERMEE') {
+      if (!window.confirm('Êtes-vous sûr de vouloir fermer cette réclamation ? Cette action est définitive.')) {
+        return;
+      }
+    }
+
+    setIsSubmitting(true);
     
     try {
       await axios.put(`${API_URL}/reclamations/${reclamationId}/statut`, {
         admin_id: user.id || user.ID,
         nouveau_statut: actionData.nouveau_statut,
-        commentaire: actionData.commentaire
+        commentaire: actionData.commentaire || null
       });
       setShowModal(false);
       setActionData({ nouveau_statut: '', commentaire: '' });
-      loadData();
-      const successMsg = document.createElement('div');
-      successMsg.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-        color: white;
-        padding: 16px 24px;
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(17, 153, 142, 0.3);
-        z-index: 10000;
-        font-weight: 600;
-      `;
-      successMsg.textContent = 'Statut mis à jour avec succès!';
-      document.body.appendChild(successMsg);
-      setTimeout(() => {
-        successMsg.remove();
-      }, 3000);
+      setSelectedReclamation(null);
+      await loadData();
+      showToast(`Statut mis à jour avec succès: ${actionData.nouveau_statut}`, 'success');
     } catch (error) {
       console.error('Erreur:', error);
-      const errorMsg = document.createElement('div');
-      errorMsg.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
-        color: white;
-        padding: 16px 24px;
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(235, 51, 73, 0.3);
-        z-index: 10000;
-        font-weight: 600;
-      `;
-      errorMsg.textContent = 'Erreur lors de la mise à jour';
-      document.body.appendChild(errorMsg);
-      setTimeout(() => {
-        errorMsg.remove();
-      }, 3000);
+      const errorMessage = error.response?.data?.error || error.message || 'Erreur lors de la mise à jour';
+      showToast(errorMessage, 'error');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleAssignResponsible = async (reclamationId, adminId) => {
     if (!reclamationId || !adminId) {
-      console.error('ID de réclamation ou admin manquant:', { reclamationId, adminId });
+      showToast('ID de réclamation ou admin manquant', 'error');
       return;
     }
     
+    const admin = admins.find(a => (a.id || a.ID) === parseInt(adminId));
+    const adminName = admin ? `${admin.nom || admin.NOM} ${admin.prenom || admin.PRENOM}` : 'Responsable';
+    
+    // Mise à jour optimiste de l'interface
+    setReclamations(prevReclamations => 
+      prevReclamations.map(rec => {
+        const recId = rec.reclamation_id || rec.RECLAMATION_ID || rec.id || rec.ID;
+        if (recId === parseInt(reclamationId)) {
+          return {
+            ...rec,
+            admin_assignee: adminName,
+            admin_assignee_id: parseInt(adminId),
+            statut: rec.statut === 'EN ATTENTE' ? 'EN COURS' : rec.statut
+          };
+        }
+        return rec;
+      })
+    );
+    
     try {
-      await axios.put(`${API_URL}/reclamations/${reclamationId}/responsable`, {
+      const response = await axios.put(`${API_URL}/reclamations/${reclamationId}/responsable`, {
         admin_id: adminId
       });
-      loadData();
-      const successMsg = document.createElement('div');
-      successMsg.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-        color: white;
-        padding: 16px 24px;
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(17, 153, 142, 0.3);
-        z-index: 10000;
-        font-weight: 600;
-      `;
-      successMsg.textContent = 'Responsable attribué avec succès!';
-      document.body.appendChild(successMsg);
-      setTimeout(() => {
-        successMsg.remove();
-      }, 3000);
+      
+      console.log('✅ Réponse attribution:', response.data);
+      console.log('🔄 Rechargement des données...');
+      
+      // Attendre un peu pour laisser Oracle se mettre à jour
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Recharger les données pour s'assurer de la cohérence
+      await loadData();
+      
+      // Vérifier que la mise à jour a bien été appliquée
+      const updatedRec = reclamations.find(rec => {
+        const recId = rec.reclamation_id || rec.RECLAMATION_ID || rec.id || rec.ID;
+        return recId === parseInt(reclamationId);
+      });
+      
+      console.log('🔍 Réclamation après rechargement:', updatedRec);
+      
+      showToast(`Responsable attribué avec succès: ${adminName}`, 'success');
     } catch (error) {
-      console.error('Erreur:', error);
-      const errorMsg = document.createElement('div');
-      errorMsg.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
-        color: white;
-        padding: 16px 24px;
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(235, 51, 73, 0.3);
-        z-index: 10000;
-        font-weight: 600;
-      `;
-      errorMsg.textContent = 'Erreur lors de l\'attribution';
-      document.body.appendChild(errorMsg);
-      setTimeout(() => {
-        errorMsg.remove();
-      }, 3000);
+      console.error('❌ Erreur lors de l\'attribution:', error);
+      console.error('❌ Détails:', error.response?.data);
+      
+      // Annuler la mise à jour optimiste en cas d'erreur
+      await loadData();
+      
+      const errorMessage = error.response?.data?.error || error.message || 'Erreur lors de l\'attribution';
+      showToast(errorMessage, 'error');
     }
   };
 
   const openModal = (reclamation) => {
     setSelectedReclamation(reclamation);
-    setActionData({ nouveau_statut: reclamation.statut, commentaire: '' });
+    setActionData({ 
+      nouveau_statut: reclamation.statut || reclamation.STATUT || '', 
+      commentaire: '' 
+    });
     setShowModal(true);
   };
 
@@ -234,11 +297,40 @@ function AdminDashboard({ user, onLogout }) {
   };
 
   if (loading) {
-    return <div className="container">Chargement...</div>;
+    return (
+      <div className="container" style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        minHeight: '60vh',
+        color: 'white',
+        fontSize: '18px'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ 
+            width: '50px', 
+            height: '50px', 
+            border: '4px solid rgba(255, 255, 255, 0.3)',
+            borderTop: '4px solid white',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            margin: '0 auto 16px'
+          }}></div>
+          Chargement des données...
+        </div>
+      </div>
+    );
   }
 
   return (
     <div>
+      {toast && (
+        <Toast 
+          message={toast.message} 
+          type={toast.type} 
+          onClose={() => setToast(null)} 
+        />
+      )}
       <div className="header">
         <div className="header-content">
           <h1 style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#1e293b' }}>
@@ -372,6 +464,26 @@ function AdminDashboard({ user, onLogout }) {
               <option value="TECHNIQUE">Technique</option>
             </select>
           </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto', padding: '8px 12px', background: filters.mesReclamations ? 'rgba(34, 197, 94, 0.2)' : 'transparent', borderRadius: '8px', border: filters.mesReclamations ? '2px solid rgba(34, 197, 94, 0.5)' : '2px solid transparent' }}>
+            <input
+              type="checkbox"
+              id="mesReclamations"
+              checked={filters.mesReclamations}
+              onChange={(e) => {
+                console.log('✅ Checkbox "Mes réclamations" changée:', e.target.checked);
+                setFilters({ ...filters, mesReclamations: e.target.checked });
+              }}
+              style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+            />
+            <label htmlFor="mesReclamations" style={{ color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '500' }}>
+              <UserIcon size={16} color="white" />
+              Mes réclamations uniquement
+              {filters.mesReclamations && (user.id || user.ID) && (
+                <span style={{ fontSize: '12px', opacity: 0.8 }}>(Admin #{user.id || user.ID})</span>
+              )}
+            </label>
+          </div>
         </div>
 
         <div className="card">
@@ -434,17 +546,55 @@ function AdminDashboard({ user, onLogout }) {
                         {reclamation.priorite}
                       </span>
                     </td>
-                    <td style={{ color: 'rgba(255, 255, 255, 0.8)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <CalendarIcon size={16} color="rgba(255, 255, 255, 0.8)" />
-                      {new Date(reclamation.date_creation).toLocaleDateString('fr-FR')}
+                    <td style={{ color: 'rgba(255, 255, 255, 0.8)', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <CalendarIcon size={16} color="rgba(255, 255, 255, 0.8)" />
+                        {new Date(reclamation.date_creation || reclamation.DATE_CREATION).toLocaleDateString('fr-FR', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric'
+                        })}
+                      </div>
+                      <div style={{ fontSize: '11px', opacity: 0.7 }}>
+                        {(() => {
+                          const date = new Date(reclamation.date_creation || reclamation.DATE_CREATION);
+                          const now = new Date();
+                          const diffTime = Math.abs(now - date);
+                          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                          return diffDays === 0 ? "Aujourd'hui" : diffDays === 1 ? "Hier" : `Il y a ${diffDays} jours`;
+                        })()}
+                      </div>
                     </td>
                     <td>
-                      {reclamation.admin_assignee ? (
-                        <span style={{ color: 'rgba(255, 255, 255, 0.9)', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <UserIcon size={16} color="rgba(255, 255, 255, 0.9)" />
-                          {reclamation.admin_assignee}
-                        </span>
-                      ) : (
+                      {(() => {
+                        const hasAssignee = reclamation.admin_assignee || reclamation.admin_assignee_id;
+                        if (!hasAssignee) return null;
+                        
+                        let displayName = reclamation.admin_assignee;
+                        
+                        // Si pas de nom mais un ID, chercher dans la liste des admins
+                        if (!displayName && reclamation.admin_assignee_id) {
+                          const assignedAdmin = admins.find(a => {
+                            const adminId = a.id || a.ID;
+                            const assigneeId = parseInt(reclamation.admin_assignee_id);
+                            return adminId === assigneeId;
+                          });
+                          
+                          if (assignedAdmin) {
+                            displayName = `${assignedAdmin.nom || assignedAdmin.NOM} ${assignedAdmin.prenom || assignedAdmin.PRENOM}`;
+                          } else {
+                            console.warn(`⚠️ Admin non trouvé pour ID ${reclamation.admin_assignee_id} dans la réclamation #${reclamation.reclamation_id}`);
+                            displayName = `Admin #${reclamation.admin_assignee_id}`;
+                          }
+                        }
+                        
+                        return displayName ? (
+                          <span style={{ color: 'rgba(255, 255, 255, 0.9)', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <UserIcon size={16} color="rgba(255, 255, 255, 0.9)" />
+                            {displayName}
+                          </span>
+                        ) : null;
+                      })() || (
                         <select 
                           onChange={(e) => {
                             const reclamationId = reclamation.reclamation_id || reclamation.RECLAMATION_ID || reclamation.id || reclamation.ID;
@@ -453,12 +603,14 @@ function AdminDashboard({ user, onLogout }) {
                             }
                           }}
                           defaultValue=""
+                          disabled={reclamation.statut === 'FERMEE'}
                           style={{ 
                             padding: '6px 12px',
                             borderRadius: '6px',
                             border: '2px solid #e2e8f0',
                             fontSize: '13px',
-                            cursor: 'pointer'
+                            cursor: reclamation.statut === 'FERMEE' ? 'not-allowed' : 'pointer',
+                            opacity: reclamation.statut === 'FERMEE' ? 0.5 : 1
                           }}
                         >
                           <option value="">Assigner un responsable...</option>
@@ -504,15 +656,41 @@ function AdminDashboard({ user, onLogout }) {
                 <label>
                   <TagIcon size={18} color="white" />
                   Nouveau statut
+                  {selectedReclamation && (
+                    <span style={{ fontSize: '12px', opacity: 0.8, marginLeft: '8px' }}>
+                      (Actuel: {selectedReclamation.statut || selectedReclamation.STATUT})
+                    </span>
+                  )}
                 </label>
                 <select
                   value={actionData.nouveau_statut}
                   onChange={(e) => setActionData({ ...actionData, nouveau_statut: e.target.value })}
                 >
-                  <option value="EN ATTENTE">En Attente</option>
-                  <option value="EN COURS">En Cours</option>
-                  <option value="RESOLUE">Résolue</option>
-                  <option value="FERMEE">Fermée</option>
+                  {selectedReclamation && (() => {
+                    const currentStatut = selectedReclamation.statut || selectedReclamation.STATUT;
+                    const validTransitions = {
+                      'EN ATTENTE': ['EN COURS', 'RESOLUE', 'FERMEE'],
+                      'EN COURS': ['RESOLUE', 'FERMEE', 'EN ATTENTE'],
+                      'RESOLUE': ['FERMEE'],
+                      'FERMEE': []
+                    };
+                    const allowed = validTransitions[currentStatut] || [];
+                    return (
+                      <>
+                        <option value="">-- Sélectionner un statut --</option>
+                        {allowed.map(statut => (
+                          <option key={statut} value={statut}>
+                            {statut === 'EN ATTENTE' ? 'En Attente' : 
+                             statut === 'EN COURS' ? 'En Cours' : 
+                             statut === 'RESOLUE' ? 'Résolue' : 'Fermée'}
+                          </option>
+                        ))}
+                        {allowed.length === 0 && (
+                          <option value="" disabled>Cette réclamation est fermée et ne peut plus être modifiée</option>
+                        )}
+                      </>
+                    );
+                  })()}
                 </select>
               </div>
               <div className="form-group">
@@ -527,9 +705,22 @@ function AdminDashboard({ user, onLogout }) {
                   rows="4"
                 />
               </div>
-              <button className="btn btn-primary" onClick={handleStatusChange} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              <button 
+                className="btn btn-primary" 
+                onClick={handleStatusChange} 
+                disabled={isSubmitting || !actionData.nouveau_statut}
+                style={{ 
+                  width: '100%', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  gap: '8px',
+                  opacity: (isSubmitting || !actionData.nouveau_statut) ? 0.6 : 1,
+                  cursor: (isSubmitting || !actionData.nouveau_statut) ? 'not-allowed' : 'pointer'
+                }}
+              >
                 <SaveIcon size={18} color="white" />
-                Enregistrer les modifications
+                {isSubmitting ? 'Enregistrement...' : 'Enregistrer les modifications'}
               </button>
             </div>
         </div>

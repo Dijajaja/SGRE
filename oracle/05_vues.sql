@@ -36,6 +36,7 @@ SELECT
     r.statut,
     r.priorite,
     r.date_creation,
+    r.admin_assignee_id,
     e.nom || ' ' || e.prenom AS etudiant_nom,
     e.filiere,
     e.email AS etudiant_email,

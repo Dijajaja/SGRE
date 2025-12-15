@@ -74,52 +74,114 @@ router.post('/', async (req, res) => {
 // Obtenir toutes les réclamations
 router.get('/', async (req, res) => {
     try {
-        const { statut, type, etudiant_id } = req.query;
-        let sql = 'SELECT * FROM v_dashboard_admin WHERE 1=1';
-        const binds = [];
-        let bindIndex = 1;
+        const { statut, type, etudiant_id, admin_id } = req.query;
+        // Utiliser des colonnes explicites pour garantir les noms
+        let sql = `SELECT 
+            reclamation_id,
+            titre,
+            type_reclamation,
+            statut,
+            priorite,
+            date_creation,
+            admin_assignee_id,
+            etudiant_nom,
+            filiere,
+            etudiant_email,
+            admin_assignee,
+            admin_role,
+            nb_traitements,
+            jours_traitement,
+            jours_attente
+        FROM v_dashboard_admin WHERE 1=1`;
+        const binds = {};
 
         if (statut) {
-            sql += ` AND statut = :${bindIndex}`;
-            binds.push(statut);
-            bindIndex++;
+            sql += ` AND statut = :statut`;
+            binds.statut = statut;
         }
         if (type) {
-            sql += ` AND type_reclamation = :${bindIndex}`;
-            binds.push(type);
-            bindIndex++;
+            sql += ` AND type_reclamation = :type`;
+            binds.type = type;
         }
         if (etudiant_id) {
-            sql += ` AND reclamation_id IN (SELECT id FROM RECLAMATION WHERE etudiant_id = :${bindIndex})`;
-            binds.push(etudiant_id);
-            bindIndex++;
+            sql += ` AND reclamation_id IN (SELECT id FROM RECLAMATION WHERE etudiant_id = :etudiant_id)`;
+            binds.etudiant_id = parseInt(etudiant_id);
+        }
+        // Filtrer par admin assigné si admin_id est fourni dans les query params
+        if (admin_id) {
+            console.log('🔍 Filtrage par admin_id:', admin_id);
+            sql += ` AND admin_assignee_id = :admin_id`;
+            binds.admin_id = parseInt(admin_id);
+            console.log('🔍 SQL avec filtre admin:', sql);
+            console.log('🔍 Binds:', binds);
         }
 
         sql += ' ORDER BY jours_attente DESC NULLS LAST, date_creation DESC';
         
-        const result = await db.executeQuery(sql, binds);
+        console.log('📊 SQL final:', sql);
+        console.log('📊 Binds:', binds);
+        console.log('📊 Nombre de binds:', Object.keys(binds).length);
+        
+        // Utiliser des binds nommés (objet) ou un tableau vide si pas de filtres
+        let result;
+        if (Object.keys(binds).length > 0) {
+            result = await db.executeQuery(sql, binds);
+        } else {
+            // Pas de filtres, exécuter sans binds
+            result = await db.executeQuery(sql, []);
+        }
+        
+        // Debug: voir les clés exactes retournées par Oracle
+        if (result && result.length > 0) {
+            console.log('🔍 Première ligne brute d\'Oracle:', Object.keys(result[0]));
+            console.log('🔍 Valeurs de la première ligne:', result[0]);
+        }
         
         // Formater les résultats pour utiliser des noms en minuscules
-        const formattedResult = (result || []).map(row => ({
-            reclamation_id: row.RECLAMATION_ID || row.reclamation_id || row.ID || row.id,
-            titre: row.TITRE || row.titre,
-            type_reclamation: row.TYPE_RECLAMATION || row.type_reclamation,
-            statut: row.STATUT || row.statut,
-            priorite: row.PRIORITE || row.priorite,
-            date_creation: row.DATE_CREATION || row.date_creation,
-            etudiant_nom: row.ETUDIANT_NOM || row.etudiant_nom,
-            filiere: row.FILIERE || row.filiere,
-            etudiant_email: row.ETUDIANT_EMAIL || row.etudiant_email,
-            admin_assignee: row.ADMIN_ASSIGNEE || row.admin_assignee,
-            admin_role: row.ADMIN_ROLE || row.admin_role,
-            nb_traitements: row.NB_TRAITEMENTS || row.nb_traitements,
-            jours_traitement: row.JOURS_TRAITEMENT || row.jours_traitement,
-            jours_attente: row.JOURS_ATTENTE || row.jours_attente
-        }));
+        const formattedResult = (result || []).map((row, index) => {
+            // Essayer toutes les variantes possibles de noms de colonnes
+            const rec = {
+                reclamation_id: row.RECLAMATION_ID || row.reclamation_id || row.RECLAMATION_id || row.RECLAMATIONID || row.ID || row.id,
+                titre: row.TITRE || row.titre || row.Titre,
+                type_reclamation: row.TYPE_RECLAMATION || row.type_reclamation || row.TYPE_RECLAMATION || row.Type_Reclamation,
+                statut: row.STATUT || row.statut || row.Statut,
+                priorite: row.PRIORITE || row.priorite || row.Priorite,
+                date_creation: row.DATE_CREATION || row.date_creation || row.DATE_CREATION || row.Date_Creation,
+                etudiant_nom: row.ETUDIANT_NOM || row.etudiant_nom || row.ETUDIANT_NOM || row.Etudiant_Nom,
+                filiere: row.FILIERE || row.filiere || row.Filiere,
+                etudiant_email: row.ETUDIANT_EMAIL || row.etudiant_email || row.ETUDIANT_EMAIL || row.Etudiant_Email,
+                admin_assignee: row.ADMIN_ASSIGNEE || row.admin_assignee || row.ADMIN_ASSIGNEE || row.Admin_Assignee || null,
+                admin_assignee_id: row.ADMIN_ASSIGNEE_ID || row.admin_assignee_id || row.ADMIN_ASSIGNEE_ID || row.Admin_Assignee_Id || null,
+                admin_role: row.ADMIN_ROLE || row.admin_role || row.ADMIN_ROLE || row.Admin_Role,
+                nb_traitements: row.NB_TRAITEMENTS || row.nb_traitements || row.NB_TRAITEMENTS || row.Nb_Traitements,
+                jours_traitement: row.JOURS_TRAITEMENT || row.jours_traitement || row.JOURS_TRAITEMENT || row.Jours_Traitement,
+                jours_attente: row.JOURS_ATTENTE || row.jours_attente || row.JOURS_ATTENTE || row.Jours_Attente
+            };
+            
+            if (index === 0) {
+                console.log('🔍 Première réclamation formatée:', rec);
+            }
+            
+            return rec;
+        });
+        
+        console.log('📊 Réclamations formatées:', formattedResult.length, 'réclamations');
+        formattedResult.forEach(rec => {
+            if (rec.reclamation_id) {
+                console.log(`  - Réclamation #${rec.reclamation_id}: statut=${rec.statut}, admin_assignee="${rec.admin_assignee || 'NULL'}", admin_assignee_id=${rec.admin_assignee_id || 'NULL'}`);
+            }
+        });
         
         res.json(formattedResult);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('❌ Erreur lors de la récupération des réclamations:', error);
+        console.error('❌ Message:', error.message);
+        console.error('❌ Code Oracle:', error.errorNum);
+        console.error('❌ Offset:', error.offset);
+        res.status(500).json({ 
+            error: error.message || 'Erreur lors de la récupération des réclamations',
+            details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
     }
 });
 
@@ -208,12 +270,39 @@ router.put('/:id/responsable', async (req, res) => {
         }
 
         const oracledb = require('oracledb');
+        
+        // Vérifier l'état avant attribution
+        const checkSql = 'SELECT statut, admin_assignee_id FROM RECLAMATION WHERE id = :id';
+        const checkResult = await db.executeQuery(checkSql, { id: parseInt(id) });
+        
+        if (!checkResult || checkResult.length === 0) {
+            return res.status(404).json({ error: 'Réclamation non trouvée' });
+        }
+        
+        console.log('📊 État avant attribution:', {
+            statut: checkResult[0].STATUT || checkResult[0].statut,
+            admin_assignee_id: checkResult[0].ADMIN_ASSIGNEE_ID || checkResult[0].admin_assignee_id
+        });
+        
         await db.executeProcedure('attribuer_responsable', {
             p_reclamation_id: { val: parseInt(id), type: oracledb.NUMBER },
             p_admin_id: { val: parseInt(admin_id), type: oracledb.NUMBER }
         });
 
-        res.json({ message: 'Responsable attribué avec succès' });
+        // Vérifier l'état après attribution
+        const afterSql = 'SELECT statut, admin_assignee_id FROM RECLAMATION WHERE id = :id';
+        const afterResult = await db.executeQuery(afterSql, { id: parseInt(id) });
+        
+        console.log('📊 État après attribution:', {
+            statut: afterResult[0]?.STATUT || afterResult[0]?.statut,
+            admin_assignee_id: afterResult[0]?.ADMIN_ASSIGNEE_ID || afterResult[0]?.admin_assignee_id
+        });
+
+        res.json({ 
+            message: 'Responsable attribué avec succès',
+            statut: afterResult[0]?.STATUT || afterResult[0]?.statut,
+            admin_assignee_id: afterResult[0]?.ADMIN_ASSIGNEE_ID || afterResult[0]?.admin_assignee_id
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
