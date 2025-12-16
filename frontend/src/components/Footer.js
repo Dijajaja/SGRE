@@ -20,7 +20,6 @@ function Footer() {
         <div className="footer-section">
           <h4>Contact</h4>
           <p>support@iscae.edu</p>
-          <p>+221 31 40 93 82</p>
         </div>
       </div>
       <div className="footer-bottom">
