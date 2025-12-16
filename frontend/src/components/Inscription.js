@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { GraduationIcon, UserIcon, BookIcon, TagIcon, CheckIcon } from './Icons';
+import { GraduationIcon, UserIcon, BookIcon, TagIcon, CheckIcon, LockIcon } from './Icons';
 import './Inscription.css';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
@@ -13,7 +13,8 @@ function Inscription({ onLogin }) {
     prenom: '',
     matricule: '',
     filiere: '',
-    niveau: ''
+    niveau: '',
+    mot_de_passe: ''
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -49,6 +50,13 @@ function Inscription({ onLogin }) {
     setLoading(true);
 
     try {
+      // Valider que le mot de passe a au moins 4 caractères
+      if (formData.mot_de_passe.length < 4) {
+        setError('Le mot de passe doit contenir au moins 4 caractères');
+        setLoading(false);
+        return;
+      }
+      
       const response = await axios.post(`${API_URL}/etudiants`, formData);
       
       // Afficher un message de succès
@@ -176,6 +184,24 @@ function Inscription({ onLogin }) {
             />
             <small style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '12px', marginTop: '4px', display: 'block' }}>
               Votre email sera généré automatiquement : {formData.matricule ? formData.matricule.toLowerCase() + '.etu@iscae.mr' : 'i12345.etu@iscae.mr'}
+            </small>
+          </div>
+
+          <div className="form-group">
+            <label>
+              <LockIcon size={18} color="white" />
+              Mot de passe
+            </label>
+            <input
+              type="password"
+              value={formData.mot_de_passe}
+              onChange={(e) => setFormData({ ...formData, mot_de_passe: e.target.value })}
+              required
+              placeholder="Choisissez un mot de passe"
+              minLength={4}
+            />
+            <small style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '12px', marginTop: '4px', display: 'block' }}>
+              Minimum 4 caractères. Vous utiliserez ce mot de passe avec votre email pour vous connecter.
             </small>
           </div>
 

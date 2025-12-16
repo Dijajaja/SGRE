@@ -8,9 +8,9 @@ console.log('📚 Route POST /etudiants enregistrée');
 router.post('/', async (req, res) => {
     console.log('📝 POST /api/etudiants appelé');
     try {
-        const { nom, prenom, matricule, filiere, niveau } = req.body;
+        const { nom, prenom, matricule, filiere, niveau, mot_de_passe } = req.body;
         
-        console.log('📝 Données reçues pour inscription:', { nom, prenom, matricule, filiere, niveau });
+        console.log('📝 Données reçues pour inscription:', { nom, prenom, matricule, filiere, niveau, mot_de_passe: mot_de_passe ? '***' : 'non fourni' });
         
         if (!nom || !prenom || !matricule || !filiere || !niveau) {
             return res.status(400).json({ error: 'Tous les champs sont requis' });
@@ -46,12 +46,16 @@ router.post('/', async (req, res) => {
             connection = await db.getConnection();
             console.log('✅ Connexion obtenue');
             
-            // Insérer (le mot de passe par défaut est le matricule)
+            // Utiliser le mot de passe fourni (obligatoire maintenant)
+            if (!mot_de_passe || mot_de_passe.length < 4) {
+                return res.status(400).json({ error: 'Le mot de passe est requis et doit contenir au moins 4 caractères' });
+            }
+            const password = mot_de_passe;
             console.log('💾 Insertion de l\'étudiant...');
             const insertResult = await connection.execute(
                 `INSERT INTO ETUDIANT (nom, prenom, email, filiere, niveau, mot_de_passe, date_inscription)
-                 VALUES (:nom, :prenom, :email, :filiere, :niveau, :matricule, SYSDATE)`,
-                { nom, prenom, email, filiere, niveau, matricule: matriculeUpper },
+                 VALUES (:nom, :prenom, :email, :filiere, :niveau, :password, SYSDATE)`,
+                { nom, prenom, email, filiere, niveau, password },
                 { autoCommit: true }
             );
             console.log('✅ Étudiant inséré, lignes affectées:', insertResult.rowsAffected);
