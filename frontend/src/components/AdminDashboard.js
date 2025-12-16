@@ -55,7 +55,7 @@ function AdminDashboard({ user, onLogout }) {
   const [filters, setFilters] = useState({
     statut: '',
     type: '',
-    mesReclamations: false // Nouveau filtre pour voir seulement mes réclamations
+    mesReclamations: true // Par défaut, afficher seulement mes réclamations
   });
   const [selectedReclamation, setSelectedReclamation] = useState(null);
   const [showModal, setShowModal] = useState(false);
@@ -535,7 +535,7 @@ function AdminDashboard({ user, onLogout }) {
             />
             <label htmlFor="mesReclamations" style={{ color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '500' }}>
               <UserIcon size={16} color="white" />
-              Mes réclamations uniquement
+              {filters.mesReclamations ? 'Mes réclamations uniquement' : 'Afficher toutes les réclamations'}
               {filters.mesReclamations && (user.id || user.ID) && (
                 <span style={{ fontSize: '12px', opacity: 0.8 }}>(Admin #{user.id || user.ID})</span>
               )}
