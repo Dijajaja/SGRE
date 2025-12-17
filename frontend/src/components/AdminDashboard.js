@@ -55,7 +55,7 @@ function AdminDashboard({ user, onLogout }) {
   const [filters, setFilters] = useState({
     statut: '',
     type: '',
-    mesReclamations: true // Par défaut, afficher seulement mes réclamations
+    mesReclamations: false // Par défaut, afficher TOUTES les réclamations (vue globale)
   });
   const [selectedReclamation, setSelectedReclamation] = useState(null);
   const [showModal, setShowModal] = useState(false);
