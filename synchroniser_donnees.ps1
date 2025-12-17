@@ -92,7 +92,7 @@ if ($push -eq "O" -or $push -eq "o") {
         Write-Host "❌ Erreur lors du push !" -ForegroundColor Red
         Write-Host "   Vérifie :" -ForegroundColor Yellow
         Write-Host "   - Que le remote est configuré : git remote -v" -ForegroundColor Yellow
-        Write-Host "   - Que tu as les permissions d'écriture" -ForegroundColor Yellow
+        Write-Host "   - Que tu as les permissions d'ecriture" -ForegroundColor Yellow
         Write-Host "   - Que tu es connecté à Internet" -ForegroundColor Yellow
     }
 } else {
