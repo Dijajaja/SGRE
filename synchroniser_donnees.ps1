@@ -4,17 +4,27 @@
 Write-Host "🔄 Synchronisation des données Oracle vers Git..." -ForegroundColor Green
 Write-Host ""
 
+# Déterminer le chemin du projet
+$projectPath = $PSScriptRoot
+if (-not $projectPath) {
+    $projectPath = Get-Location
+}
+
 # Vérifier que Git est initialisé
-if (-not (Test-Path ".git")) {
+if (-not (Test-Path (Join-Path $projectPath ".git"))) {
     Write-Host "❌ Le dossier n'est pas un dépôt Git !" -ForegroundColor Red
     Write-Host "   Initialise Git d'abord : git init" -ForegroundColor Yellow
     exit 1
 }
 
+# Changer vers le dossier du projet
+Set-Location $projectPath
+
 # Vérifier que le script d'export existe
-$exportScript = Join-Path $PSScriptRoot "exporter_donnees.ps1"
+$exportScript = Join-Path $projectPath "exporter_donnees.ps1"
 if (-not (Test-Path $exportScript)) {
     Write-Host "❌ Le script exporter_donnees.ps1 n'existe pas !" -ForegroundColor Red
+    Write-Host "   Chemin attendu : $exportScript" -ForegroundColor Yellow
     exit 1
 }
 
@@ -28,7 +38,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # Vérifier que le fichier d'export existe
-$exportFile = Join-Path $PSScriptRoot "oracle\export_donnees_complet.sql"
+$exportFile = Join-Path $projectPath "oracle\export_donnees_complet.sql"
 if (-not (Test-Path $exportFile)) {
     Write-Host "❌ Le fichier d'export n'a pas été créé !" -ForegroundColor Red
     exit 1

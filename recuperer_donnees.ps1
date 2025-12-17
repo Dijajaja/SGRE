@@ -4,17 +4,27 @@
 Write-Host "📥 Récupération des données Oracle depuis Git..." -ForegroundColor Green
 Write-Host ""
 
+# Déterminer le chemin du projet
+$projectPath = $PSScriptRoot
+if (-not $projectPath) {
+    $projectPath = Get-Location
+}
+
 # Vérifier que Git est initialisé
-if (-not (Test-Path ".git")) {
+if (-not (Test-Path (Join-Path $projectPath ".git"))) {
     Write-Host "❌ Le dossier n'est pas un dépôt Git !" -ForegroundColor Red
     Write-Host "   Clone le projet depuis Git d'abord" -ForegroundColor Yellow
     exit 1
 }
 
+# Changer vers le dossier du projet
+Set-Location $projectPath
+
 # Vérifier que le script d'import existe
-$importScript = Join-Path $PSScriptRoot "importer_donnees.ps1"
+$importScript = Join-Path $projectPath "importer_donnees.ps1"
 if (-not (Test-Path $importScript)) {
     Write-Host "❌ Le script importer_donnees.ps1 n'existe pas !" -ForegroundColor Red
+    Write-Host "   Chemin attendu : $importScript" -ForegroundColor Yellow
     exit 1
 }
 
@@ -34,7 +44,7 @@ Write-Host "✅ Pull réussi !" -ForegroundColor Green
 Write-Host ""
 
 # Vérifier que le fichier d'export existe
-$exportFile = Join-Path $PSScriptRoot "oracle\export_donnees_complet.sql"
+$exportFile = Join-Path $projectPath "oracle\export_donnees_complet.sql"
 if (-not (Test-Path $exportFile)) {
     Write-Host "⚠️  Le fichier export_donnees_complet.sql n'existe pas dans Git !" -ForegroundColor Yellow
     Write-Host "   Peut-être que personne n'a encore exporté les données." -ForegroundColor Yellow
