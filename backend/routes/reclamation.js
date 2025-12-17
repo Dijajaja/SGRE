@@ -114,6 +114,8 @@ router.get('/', async (req, res) => {
             binds.admin_id = parseInt(admin_id);
             console.log('🔍 SQL avec filtre admin:', sql);
             console.log('🔍 Binds:', binds);
+        } else {
+            console.log('🔍 Aucun filtre admin_id - Affichage de TOUTES les réclamations');
         }
 
         sql += ' ORDER BY jours_attente DESC NULLS LAST, date_creation DESC';
@@ -122,14 +124,18 @@ router.get('/', async (req, res) => {
         console.log('📊 Binds:', binds);
         console.log('📊 Nombre de binds:', Object.keys(binds).length);
         
-        // Utiliser des binds nommés (objet) ou un tableau vide si pas de filtres
+        // Utiliser des binds nommés (objet) ou un objet vide si pas de filtres
         let result;
         if (Object.keys(binds).length > 0) {
+            console.log('📊 Exécution avec binds nommés');
             result = await db.executeQuery(sql, binds);
         } else {
-            // Pas de filtres, exécuter sans binds
-            result = await db.executeQuery(sql, []);
+            // Pas de filtres, exécuter sans binds (objet vide)
+            console.log('📊 Exécution SANS filtres - devrait retourner TOUTES les réclamations');
+            result = await db.executeQuery(sql, {});
         }
+        
+        console.log('📊 Nombre de réclamations retournées par Oracle:', result ? result.length : 0);
         
         // Debug: voir les clés exactes retournées par Oracle
         if (result && result.length > 0) {

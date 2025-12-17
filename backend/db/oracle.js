@@ -45,29 +45,43 @@ async function executeQuery(sql, binds = {}, options = {}) {
         connection = await getConnection();
         
         // Si binds est un objet (pour les requêtes avec RETURNING ou binds nommés), utiliser execute avec bindVars
-        if (typeof binds === 'object' && !Array.isArray(binds) && Object.keys(binds).length > 0) {
-            const result = await connection.execute(
-                sql,
-                binds,
-                {
-                    outFormat: oracledb.OUT_FORMAT_OBJECT,
-                    autoCommit: options.autoCommit || false,
-                    ...options
+        if (typeof binds === 'object' && !Array.isArray(binds)) {
+            // Si l'objet a des clés, utiliser les binds nommés
+            if (Object.keys(binds).length > 0) {
+                const result = await connection.execute(
+                    sql,
+                    binds,
+                    {
+                        outFormat: oracledb.OUT_FORMAT_OBJECT,
+                        autoCommit: options.autoCommit || false,
+                        ...options
+                    }
+                );
+                
+                // Si autoCommit est activé, commit manuellement
+                if (options.autoCommit) {
+                    await connection.commit();
                 }
-            );
-            
-            // Si autoCommit est activé, commit manuellement
-            if (options.autoCommit) {
-                await connection.commit();
+                
+                // Retourner result si c'est pour RETURNING, sinon result.rows
+                return options.returnResult ? result : result.rows;
+            } else {
+                // Objet vide, exécuter sans binds (tableau vide)
+                const result = await connection.execute(
+                    sql,
+                    [],
+                    {
+                        outFormat: oracledb.OUT_FORMAT_OBJECT,
+                        ...options
+                    }
+                );
+                return result.rows;
             }
-            
-            // Retourner result si c'est pour RETURNING, sinon result.rows
-            return options.returnResult ? result : result.rows;
         } else {
-            // Sinon, traiter comme un tableau de paramètres
+            // Tableau de paramètres
             const result = await connection.execute(
                 sql,
-                binds,
+                binds || [],
                 {
                     outFormat: oracledb.OUT_FORMAT_OBJECT,
                     ...options
